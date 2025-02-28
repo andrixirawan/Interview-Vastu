@@ -53,9 +53,12 @@ class Transaction extends Model
             \Midtrans\Config::$isSanitized = config('midtrans.is_sanitized', true);
             \Midtrans\Config::$is3ds = config('midtrans.is_3ds', true);
 
+            // Generate unique order ID dengan timestamp
+            $orderId = 'TRX-' . $this->id . '-' . time();
+
             $params = [
                 'transaction_details' => [
-                    'order_id' => 'TRX-' . $this->id,
+                    'order_id' => $orderId,
                     'gross_amount' => (int) $this->total_price,
                 ],
                 'customer_details' => [
@@ -77,12 +80,12 @@ class Transaction extends Model
                 ],
             ];
 
-            $snapToken = Snap::getSnapToken($params);
+            $snapToken = \Midtrans\Snap::getSnapToken($params);
 
             $this->update([
                 'snap_token' => $snapToken,
                 'payment_url' => 'https://app.sandbox.midtrans.com/snap/v2/vtweb/' . $snapToken,
-                'transaction_id' => 'TRX-' . $this->id
+                'transaction_id' => $orderId // Simpan order ID yang unik
             ]);
 
         } catch (\Exception $e) {
@@ -96,68 +99,84 @@ class Transaction extends Model
 
     /**
      * Update status pembayaran berdasarkan callback Midtrans
-     * 
-     * Flow:
-     * 1. Menerima data callback dari Midtrans
-     * 2. Update status dan detail pembayaran
-     * 3. Jika sukses, status menjadi 'paid'
-     * 4. Jika gagal, status menjadi 'failed' dan kembalikan kursi
-     * 
-     * Status yang mungkin:
-     * - capture: Pembayaran kartu kredit berhasil
-     * - settlement: Pembayaran berhasil
-     * - pending: Menunggu pembayaran
-     * - deny: Pembayaran ditolak
-     * - cancel: Pembayaran dibatalkan
-     * - expire: Pembayaran expired
-     * - refund: Pembayaran dikembalikan
      */
     public function handlePaymentNotification(array $payload): void
     {
-        // Pastikan semua field yang diperlukan ada
-        $payload = array_merge([
-            'payment_type' => 'unknown',
-            'transaction_time' => now(),
-            'transaction_status' => 'pending',
-            'fraud_status' => null,
-            'payment_details' => []
-        ], $payload);
+        try {
+            // Pastikan semua field yang diperlukan ada
+            $payload = array_merge([
+                'payment_type' => 'unknown',
+                'transaction_time' => now(),
+                'transaction_status' => 'pending',
+                'fraud_status' => null,
+                'payment_details' => []
+            ], $payload);
 
-        // Update data pembayaran
-        $this->update([
-            'payment_type' => $payload['payment_type'],
-            'payment_time' => $payload['transaction_time'],
-            'transaction_status' => $payload['transaction_status'],
-            'fraud_status' => $payload['fraud_status'],
-            'payment_details' => $payload
-        ]);
+            // Update data pembayaran
+            $this->update([
+                'payment_type' => $payload['payment_type'],
+                'payment_time' => $payload['transaction_time'],
+                'transaction_status' => $payload['transaction_status'],
+                'fraud_status' => $payload['fraud_status'],
+                'payment_details' => $payload
+            ]);
 
-        // Handle status pembayaran
-        switch ($payload['transaction_status']) {
-            case 'capture':
-            case 'settlement':
-                $this->markAsPaid();
-                break;
-            case 'pending':
-                $this->markAsPending();
-                break;
-            case 'deny':
-            case 'cancel':
-            case 'expire':
-                $this->markAsFailed();
-                break;
-            case 'refund':
-                $this->markAsRefunded();
-                break;
+            // Log untuk debugging
+            \Log::info('Payment notification received:', [
+                'transaction_id' => $this->transaction_id,
+                'status' => $payload['transaction_status'],
+                'fraud_status' => $payload['fraud_status']
+            ]);
+
+            // Handle status pembayaran sesuai dokumentasi Midtrans
+            switch ($payload['transaction_status']) {
+                case 'capture':
+                    if ($payload['fraud_status'] == 'challenge') {
+                        $this->markAsPending();
+                    } else if ($payload['fraud_status'] == 'accept') {
+                        $this->markAsSuccess();
+                    }
+                    break;
+                case 'settlement':
+                    $this->markAsSuccess();
+                    break;
+                case 'pending':
+                    $this->markAsPending();
+                    break;
+                case 'deny':
+                case 'cancel':
+                case 'expire':
+                    $this->markAsFailed();
+                    break;
+                case 'refund':
+                    $this->markAsRefunded();
+                    break;
+            }
+
+            // Log status akhir
+            \Log::info('Payment status updated:', [
+                'transaction_id' => $this->transaction_id,
+                'final_status' => $this->payment_status
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error handling payment notification:', [
+                'transaction_id' => $this->transaction_id,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
         }
     }
 
     /**
-     * Tandai transaksi sebagai sudah dibayar
+     * Tandai transaksi sebagai sukses
      */
-    private function markAsPaid(): void
+    private function markAsSuccess(): void
     {
-        $this->update(['payment_status' => 'paid']);
+        $this->update([
+            'payment_status' => 'success',
+            'payment_time' => now()
+        ]);
     }
 
     /**
@@ -173,7 +192,6 @@ class Transaction extends Model
      */
     private function markAsFailed(): void
     {
-        // Kembalikan kursi yang sudah dipesan
         $this->trip->increment('available_seats', $this->num_tickets);
         $this->update(['payment_status' => 'failed']);
     }
@@ -183,7 +201,6 @@ class Transaction extends Model
      */
     private function markAsRefunded(): void
     {
-        // Kembalikan kursi yang sudah dipesan
         $this->trip->increment('available_seats', $this->num_tickets);
         $this->update(['payment_status' => 'refunded']);
     }

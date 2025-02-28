@@ -23,7 +23,12 @@
 <div class="bg-white shadow-sm rounded-lg">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-semibold text-gray-800">Detail Transaksi #{{ $transaction->id }}</h2>
+            <h2 class="text-2xl font-semibold text-gray-800">
+                Detail Transaksi #{{ $transaction->id }}
+                <div class="text-sm text-gray-500 font-normal">
+                    Order ID: {{ $transaction->transaction_id }}
+                </div>
+            </h2>
             <div class="flex space-x-2">
                 <a href="{{ route('transactions.index') }}" 
                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">

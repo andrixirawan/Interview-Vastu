@@ -48,26 +48,33 @@ class MidtransController extends Controller
      */
     public function handleNotification(Request $request): Response
     {
-        $payload = $request->all();
-        
-        $orderId = $payload['order_id'];
-        $statusCode = $payload['status_code'];
-        $grossAmount = $payload['gross_amount'];
-        
-        // Generate signature key untuk validasi
-        $validSignatureKey = hash('sha512', 
-            $orderId . $statusCode . $grossAmount . config('midtrans.server_key')
-        );
+        try {
+            $notificationBody = $request->getContent();
+            $notification = json_decode($notificationBody, true);
 
-        // Validasi signature key
-        if ($payload['signature_key'] !== $validSignatureKey) {
-            return response('Invalid signature', 400);
+            // Cari transaksi berdasarkan transaction_id yang baru
+            $transaction = Transaction::where('transaction_id', $notification['order_id'])->firstOrFail();
+
+            $validSignatureKey = hash('sha512', 
+                $notification['order_id'] . 
+                $notification['status_code'] . 
+                $notification['gross_amount'] . 
+                config('midtrans.server_key')
+            );
+
+            if ($notification['signature_key'] !== $validSignatureKey) {
+                return response('Invalid signature', 400);
+            }
+
+            $transaction->handlePaymentNotification($notification);
+
+            return response('OK', 200);
+        } catch (\Exception $e) {
+            \Log::error('Midtrans notification error:', [
+                'error' => $e->getMessage(),
+                'payload' => $request->all()
+            ]);
+            return response('Error processing notification', 500);
         }
-
-        // Cari dan update transaksi
-        $transaction = Transaction::where('transaction_id', $orderId)->firstOrFail();
-        $transaction->handlePaymentNotification($payload);
-        
-        return response('OK', 200);
     }
 } 

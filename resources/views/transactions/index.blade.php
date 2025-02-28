@@ -49,7 +49,12 @@
                 <tbody class="bg-white divide-y divide-gray-200">
                     @forelse($transactions as $transaction)
                     <tr>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ $transaction->id }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {{ $transaction->id }}
+                            <div class="text-xs text-gray-500">
+                                {{ $transaction->transaction_id }}
+                            </div>
+                        </td>
                         <td class="px-6 py-4">
                             <div class="text-sm font-medium text-gray-900">{{ $transaction->customer_name }}</div>
                             <div class="text-sm text-gray-500">{{ $transaction->customer_email }}</div>
@@ -68,7 +73,7 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                {{ $transaction->payment_status === 'paid' ? 'bg-green-100 text-green-800' : 
+                                {{ $transaction->payment_status === 'success' ? 'bg-green-100 text-green-800' : 
                                    ($transaction->payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
                                 {{ ucfirst($transaction->payment_status) }}
                             </span>

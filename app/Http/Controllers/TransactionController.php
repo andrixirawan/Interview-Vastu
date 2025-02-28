@@ -90,8 +90,21 @@ class TransactionController extends Controller
                 'payment_status' => 'pending'
             ]);
             
+            // Debug log sebelum generate token
+            \Log::info('Creating transaction:', [
+                'id' => $transaction->id,
+                'total_price' => $transaction->total_price
+            ]);
+            
             // Generate Midtrans payment token
             $transaction->generatePaymentToken();
+            
+            // Debug log setelah generate token
+            \Log::info('Payment token generated:', [
+                'id' => $transaction->id,
+                'transaction_id' => $transaction->transaction_id,
+                'snap_token' => $transaction->snap_token
+            ]);
             
             // Update available seats
             $trip->decrement('available_seats', $request->validated()['num_tickets']);
@@ -104,6 +117,10 @@ class TransactionController extends Controller
             
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Transaction creation failed:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return redirect()
                 ->back()
                 ->withInput()

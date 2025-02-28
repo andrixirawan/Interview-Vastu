@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('payment_url')->nullable();
             $table->string('payment_type')->nullable();
             $table->timestamp('payment_time')->nullable();
-            $table->string('transaction_id')->nullable()->unique();
+            $table->string('transaction_id', 100)->nullable()->unique();
             $table->string('transaction_status')->nullable();
             $table->string('fraud_status')->nullable();
             $table->json('payment_details')->nullable();
